@@ -1,11 +1,14 @@
-﻿using System.Reflection.Metadata.Ecma335;
+﻿using System.Data;
+using System.Reflection.Metadata.Ecma335;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Test.Context;
 using Test.DAL.Interfaces;
 using Test.Entity;
 using Test.Model;
+using static CraveConnect.Utilities.UserActions;
 
 namespace Test.DAL.Repos
 {
@@ -14,7 +17,7 @@ namespace Test.DAL.Repos
         private readonly MyDbContext db;
         public MasterMgmtRepo(MyDbContext _db)
         {
-            db = _db;
+            db = _db ?? throw new ArgumentNullException(nameof(_db)); 
         }
 
         public async Task<(IEnumerable<FoodItemEntity>, IEnumerable<RestaurantEntity>, IEnumerable<MenuItemEntity>)> SearchAsync(string query)
@@ -42,6 +45,64 @@ namespace Test.DAL.Repos
         }
 
         #region Restaurants
+        public async Task<List<DropDownList>> RestaurantsDD(string? q = "")
+        {
+            var items = new List<DropDownList>();
+            var search = new SqlParameter("q", q == null ? "" : q);
+            //var u = await db.Restaurants.FromSqlInterpolated($"EXEC dbo.sp_getRestaurantName {search}").ToListAsync();
+            var u = await db.Restaurants.Where(r => r.IsDeleted == false).ToListAsync();
+
+            foreach (var obj in u)
+            {
+                items.Add(new DropDownList { Name = obj.Name, Id = obj.RestaurantId });
+            }
+            return items;
+        }
+        public RestaurantspModel GetAllRestaurantsPagenation(string? q = "", int pageNumber = 1, int pageSize = 5)
+        {
+            RestaurantspModel response = new RestaurantspModel();
+            List<RestaurantEntity> myList = new List<RestaurantEntity>();
+
+            try
+            {
+                SqlParameter[] sParams =
+                {
+                    new SqlParameter("@q", q ?? ""),
+                    new SqlParameter("@pageNumber", pageNumber),
+                    new SqlParameter("@pageSize", pageSize)
+                };
+
+                string sp = "EXEC sp_getRestaurantName @q, @pageNumber, @pageSize";
+
+                // Execute stored procedure to fetch paginated restaurant data
+                myList = db.Set<RestaurantEntity>().FromSqlRaw(sp, sParams).AsEnumerable().ToList();
+
+                // Fixing the parameter issue in count execution
+                SqlParameter[] sParamsCnt =
+                {
+                    new SqlParameter("@q", q ?? "")
+                };
+
+                string spCnt = "EXEC sp_getRestaurantCount @q";
+
+                // Fetch count and totalCount in one call
+                DBCountResponse count = db.Set<DBCountResponse>().FromSqlRaw(spCnt, sParamsCnt).AsEnumerable().FirstOrDefault();
+
+                response.count = count?.cnt ?? 0;
+                response.totalCount = count?.totalCount ?? 0;  // This should now work
+                response.result = myList;
+                response.pageNumber = pageNumber;
+                response.pageSize = pageSize;
+                response.q = q;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error fetching restaurant data", ex);
+            }
+
+            return response;
+        }
+
         public async Task<GenricResponse> AddOrUpdateRestaurant(RestaurantEntity model)
         {
             try
@@ -98,10 +159,96 @@ namespace Test.DAL.Repos
             return await db.Restaurants.Where(a => a.IsActive == true && a.IsDeleted == false).ToListAsync();
         }
 
+        public GenricResponse DeleteRestaurant(int id)
+        {
+            GenricResponse resp = new GenricResponse();
+
+            try
+            {
+                var restaurant = db.Restaurants.FirstOrDefault(r => !r.IsDeleted && r.RestaurantId == id);
+
+                if (restaurant != null)
+                {
+                    restaurant.IsDeleted = true;
+                    db.SaveChanges();
+
+                    resp.StatusCode = 200;
+                    resp.StatusMessage = "Restaurant Item Deleted Successfully";
+                    resp.CurrentId = id;
+                }
+                else
+                {
+                    resp.StatusCode = 404;
+                    resp.StatusMessage = "Restaurant Item not found";
+                    resp.CurrentId = id;
+                }
+            }
+            catch (Exception)
+            {
+                resp.StatusCode = 500;
+                resp.StatusMessage = "Failed to delete";
+            }
+
+            return resp;
+        }
+
+
+        public List<FoodItemModel> GetFoodItemsByRestaurantId(int restaurantId)
+        {
+            try
+            {
+                var response = new GenricResponse();
+                if (restaurantId <= 0)
+                {
+                    response.StatusCode = 0;
+                    response.StatusMessage = "Id is zero or less than zero";
+                }
+
+                //var menu = db.MenuItem.Where(m => m.MenuId == menuId).Select(m => m.ItemName).ToList();
+
+                var foodItems = db.FoodItems
+                                        .Where(food => food.RestaurantId == restaurantId && food.IsActive && !food.IsDeleted)
+                                        .Select(food => new FoodItemModel
+                                        {
+                                            RestaurantId = food.RestaurantId,
+                                            MenuId = food.MenuId,
+                                            FoodItemId = food.FoodItemId,
+                                            FoodItem = food.FoodItem,
+                                            Price = food.Price,
+                                            FoodImage = food.FoodImage,
+                                        })
+                                   .ToList();
+                return foodItems;
+
+
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+
+
+
+        }
+
 
         #endregion
 
         #region Menu
+        public async Task<List<DropDownList>> MenuItemsDD(string? q = "")
+        {
+            var items = new List<DropDownList>();
+            var search = new SqlParameter("q", q == null ? "" : q);
+            //var u = await db.MenuItem.FromSqlInterpolated($"EXEC dbo.sp_getMenuName {search}").ToListAsync();
+            var u = await db.MenuItem.Where(a=>a.IsDeleted==false).ToListAsync();
+
+            foreach (var obj in u)
+            {
+                items.Add(new DropDownList { Name = obj.ItemName, Id = obj.MenuId });
+            }
+            return items;
+        }
         public async Task<GenricResponse> AddOrUpdateMenu(MenuItemEntity model)
         {
             var response = new GenricResponse();
@@ -116,9 +263,21 @@ namespace Test.DAL.Repos
                     return response;
                 }
 
+                var existingMenu = await db.MenuItem.Where(m => m.ItemName == model.ItemName && !m.IsDeleted)
+                    .FirstOrDefaultAsync();
+                if (existingMenu!=null)
+                {
+                    return new GenricResponse
+                    {
+                        StatusCode = 409,
+                        StatusMessage = "Menu Item already exists.",
+                    };
+                }
 
                 // Check if the restaurant exists
-                var restaurant = await db.Restaurants.FindAsync(model.RestaurantId);
+                var restaurant = await db.Restaurants
+                    .Where(r=>r.RestaurantId == model.RestaurantId && !r.IsDeleted).FirstOrDefaultAsync();
+
                 if (restaurant == null)
                 {
                     response.StatusMessage = "Restaurant not found.";
@@ -177,29 +336,100 @@ namespace Test.DAL.Repos
             return response;
         }
 
+        //public List<MenuItemModel> GetAllMenuItems()
+        //{
+        //    try
+        //    {
+
+        //        var menu = db.MenuItem.Where(a => a.IsDeleted == false).
+        //               Select(a => new MenuItemModel
+        //               {
+        //                   MenuId = a.MenuId,
+        //                   RestaurantId = a.RestaurantId,
+        //                   ItemName = a.ItemName,
+        //                   Price = a.Price,
+        //                   MenuImage = a.MenuImage,
+
+        //               }).ToList();
+
+        //        return menu;
+        //    }
+        //    catch (Exception ex)
+        //    {
+
+        //        throw;
+        //    }
+
+        //}
+
+        public MenuItemspModel GetAllMenuItemsPagenation(string? q = "", int pageNumber = 1, int pageSize = 10)
+        {
+            MenuItemspModel response = new MenuItemspModel();
+            List<MenuItemModel> myList = new List<MenuItemModel>();
+
+            try
+            {
+                SqlParameter[] sParams =
+                {
+                    new SqlParameter("@q", q ?? ""),
+                    new SqlParameter("@pageNumber", pageNumber),
+                    new SqlParameter("@pageSize", pageSize)
+                };
+
+                string sp = "EXEC sp_getMenuName @q, @pageNumber, @pageSize";
+
+                // Execute stored procedure to fetch paginated restaurant data
+                myList = db.Set<MenuItemModel>().FromSqlRaw(sp, sParams).AsEnumerable().ToList();
+
+                // Fixing the parameter issue in count execution
+                SqlParameter[] sParamsCnt =
+                {
+                    new SqlParameter("@q", q ?? "")
+                };
+
+                string spCnt = "EXEC sp_getMenuCount @q";
+
+                // Fetch count and totalCount in one call
+                DBCountResponse count = db.Set<DBCountResponse>().FromSqlRaw(spCnt, sParamsCnt).AsEnumerable().FirstOrDefault();
+
+                response.count = count?.cnt ?? 0;
+                response.totalCount = count?.totalCount ?? 0;  // This should now work
+                response.result = myList;
+                response.pageNumber = pageNumber;
+                response.pageSize = pageSize;
+                response.q = q;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error fetching restaurant data", ex);
+            }
+
+            return response;
+        }
         public List<MenuItemModel> GetAllMenuItems()
         {
             try
             {
-                var menu = db.MenuItem.Where(a => a.IsDeleted == false).
-                       Select(a => new MenuItemModel
-                       {
-                           MenuId = a.MenuId,
-                           RestaurantId = a.RestaurantId,
-                           ItemName = a.ItemName,
-                           Price = a.Price,
-                           MenuImage = a.MenuImage,
-
-                       }).ToList();
+                var menu = (from menuItem in db.MenuItem
+                            join restaurant in db.Restaurants
+                            on menuItem.RestaurantId equals restaurant.RestaurantId
+                            where !menuItem.IsDeleted && !restaurant.IsDeleted
+                            select new MenuItemModel
+                            {
+                                MenuId = menuItem.MenuId,
+                                RestaurantId = menuItem.RestaurantId,
+                                RestaurantName = restaurant.Name, // Fetching restaurant name from the Restaurants table
+                                ItemName = menuItem.ItemName,
+                                Price = menuItem.Price,
+                                MenuImage = menuItem.MenuImage
+                            }).ToList();
 
                 return menu;
             }
             catch (Exception ex)
             {
-
-                throw;
+                throw; // Consider logging the exception
             }
-
         }
 
         public MenuItemEntity GetMenuById(int id)
@@ -207,8 +437,134 @@ namespace Test.DAL.Repos
             return db.MenuItem.Where(m => m.MenuId == id && m.IsDeleted == false).FirstOrDefault();
 
         }
+
+        public GenricResponse DeleteMenuItem(int id)
+        {
+            GenricResponse resp = new GenricResponse();
+
+            try
+            {
+                var menu = db.MenuItem.FirstOrDefault(r => !r.IsDeleted && r.MenuId == id);
+
+                if (menu != null)
+                {
+                    menu.IsDeleted = true;
+                    db.SaveChanges();
+
+                    resp.StatusCode = 200;
+                    resp.StatusMessage = "Menu Item Deleted Successfully";
+                    resp.CurrentId = id;
+                }
+                else
+                {
+                    resp.StatusCode = 404;
+                    resp.StatusMessage = "Menu Item not found";
+                    resp.CurrentId = id;
+                }
+            }
+            catch (Exception)
+            {
+                resp.StatusCode = 500;
+                resp.StatusMessage = "Failed to delete";
+            }
+
+            return resp;
+        }
+
         #endregion
 
+        #region FoodItems
+        public FoodItemspModel GetAllFoodItemsPagenation(string? q = "", int pageNumber = 1, int pageSize = 10)
+        {
+            FoodItemspModel response = new FoodItemspModel();
+            List<FoodItemModel> myList = new List<FoodItemModel>();
+
+            try
+            {
+                SqlParameter[] sParams =
+                {
+                    new SqlParameter("@q", q ?? (object)DBNull.Value),
+                    new SqlParameter("@pageNumber", pageNumber),
+                    new SqlParameter("@pageSize", pageSize)
+                };
+
+                string sp = "EXEC sp_getFoodItemName @q, @pageNumber, @pageSize";
+
+                // Ensure EF Core does not expect a Discriminator column
+                myList = db.Database.SqlQueryRaw<FoodItemModel>(sp, sParams).AsNoTracking().ToList();
+
+                // Fetch count data safely
+                SqlParameter[] sParamsCnt =
+                {
+                    new SqlParameter("@q", q ?? (object)DBNull.Value)
+                };
+
+                string spCnt = "EXEC sp_getFoodItemCount @q";
+                DBCountResponse count = db.Database.SqlQueryRaw<DBCountResponse>(spCnt, sParamsCnt).AsNoTracking().AsEnumerable().FirstOrDefault();
+
+                response.count = count?.cnt ?? 0;
+                response.totalCount = count?.totalCount ?? 0;
+                response.result = myList;
+                response.pageNumber = pageNumber;
+                response.pageSize = pageSize;
+                response.q = q;
+            }
+            catch (SqlException sqlEx)
+            {
+                throw new Exception("SQL Error fetching food item data", sqlEx);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("General error fetching food item data", ex);
+            }
+
+            return response;
+        }
+
+        //public FoodItemspModel GetAllFoodItemsPagenation(string? q = "", int pageNumber = 1, int pageSize = 10)
+        //{
+        //    FoodItemspModel response = new FoodItemspModel();
+        //    List<FoodItemModel> myList = new List<FoodItemModel>();
+
+        //    try
+        //    {
+        //        SqlParameter[] sParams =
+        //        {
+        //            new SqlParameter("@q", q ?? ""),
+        //            new SqlParameter("@pageNumber", pageNumber),
+        //            new SqlParameter("@pageSize", pageSize)
+        //        };
+
+        //        string sp = "EXEC sp_getFoodItemName @q, @pageNumber, @pageSize";
+
+        //        // Execute stored procedure to fetch paginated restaurant data
+        //        myList = db.Set<FoodItemModel>().FromSqlRaw(sp, sParams).AsEnumerable().ToList();
+
+        //        // Fixing the parameter issue in count execution
+        //        SqlParameter[] sParamsCnt =
+        //        {
+        //            new SqlParameter("@q", q ?? "")
+        //        };
+
+        //        string spCnt = "EXEC sp_getFoodItemCount @q";
+
+        //        // Fetch count and totalCount in one call
+        //        DBCountResponse count = db.Set<DBCountResponse>().FromSqlRaw(spCnt, sParamsCnt).AsEnumerable().FirstOrDefault();
+
+        //        response.count = count?.cnt ?? 0;
+        //        response.totalCount = count?.totalCount ?? 0;  // This should now work
+        //        response.result = myList;
+        //        response.pageNumber = pageNumber;
+        //        response.pageSize = pageSize;
+        //        response.q = q;
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        throw new Exception("Error fetching food item data", ex);
+        //    }
+
+        //    return response;
+        //}
         public async Task<GenricResponse> AddOrUpdateFoodItem(FoodItemEntity model)
         {
             var response = new GenricResponse();
@@ -222,7 +578,16 @@ namespace Test.DAL.Repos
                     response.StatusCode = 400; // Bad Request
                     return response;
                 }
-
+                var existFood = await db.FoodItems
+                    .Where(f => f.FoodItem == model.FoodItem && !f.IsDeleted).FirstOrDefaultAsync();
+                if (existFood != null)
+                {
+                    return new GenricResponse
+                    {
+                        StatusCode = 409,
+                        StatusMessage = "Food Item already exists",
+                    };
+                }
 
                 // Check if the restaurant exists
                 var restaurant = await db.Restaurants.FindAsync(model.RestaurantId);
@@ -256,6 +621,7 @@ namespace Test.DAL.Repos
                     existingFoodItem.FoodImage = model.FoodImage;
 
                     db.FoodItems.Update(existingFoodItem);
+                    response.StatusCode = 204;
                     response.StatusMessage = "Food item updated successfully.";
                 }
                 else
@@ -312,7 +678,7 @@ namespace Test.DAL.Repos
                 RestaurantId = foodItem.RestaurantId,
                 RestaurantName = db.Restaurants.FirstOrDefault(r => r.RestaurantId == foodItem.RestaurantId)?.Name,
                 MenuId = foodItem.MenuId,
-                MenuName = db.MenuItem.FirstOrDefault(m => m.MenuId == foodItem.MenuId)?.ItemName,
+                ItemName = db.MenuItem.FirstOrDefault(m => m.MenuId == foodItem.MenuId)?.ItemName,
                 FoodItem = foodItem.FoodItem,
                 Price = foodItem.Price,
                 FoodImage = foodItem.FoodImage
@@ -355,44 +721,71 @@ namespace Test.DAL.Repos
 
         }
 
-        public List<FoodItemModel> GetFoodItemsByRestaurantId(int restaurantId)
+        public GenricResponse DeleteFoodItem(int id)
         {
+            GenricResponse resp = new GenricResponse();
+
             try
             {
-                var response = new GenricResponse();
-                if (restaurantId <=0 )
+                var food = db.FoodItems.FirstOrDefault(r => !r.IsDeleted && r.FoodItemId == id);
+
+                if (food != null)
                 {
-                    response.StatusCode = 0;
-                    response.StatusMessage = "Id is zero or less than zero";
+                    food.IsDeleted = true;
+                    db.SaveChanges();
+
+                    resp.StatusCode = 200;
+                    resp.StatusMessage = "Food Item Deleted Successfully";
+                    resp.CurrentId = id;
                 }
-
-                //var menu = db.MenuItem.Where(m => m.MenuId == menuId).Select(m => m.ItemName).ToList();
-
-                var foodItems = db.FoodItems
-                                        .Where(food => food.RestaurantId == restaurantId && food.IsActive && !food.IsDeleted)
-                                        .Select(food => new FoodItemModel
-                                        {
-                                            RestaurantId = food.RestaurantId,
-                                            MenuId = food.MenuId,
-                                            FoodItemId = food.FoodItemId,
-                                            FoodItem = food.FoodItem,
-                                            Price = food.Price,
-                                            FoodImage = food.FoodImage,
-                                        })
-                                   .ToList();
-                return foodItems;
-
-
+                else
+                {
+                    resp.StatusCode = 404;
+                    resp.StatusMessage = "Food Item not found";
+                    resp.CurrentId = id;
+                }
             }
             catch (Exception)
             {
-
-                throw;
+                resp.StatusCode = 500;
+                resp.StatusMessage = "Failed to delete";
             }
 
-
-
+            return resp;
         }
+
+        public (MostOrderedFood, MostVisitedRestaurant) GetMostOrderedFoodAndRestaurant(int? userId = null)
+        {
+            MostOrderedFood mostOrderedFood = null;
+            MostVisitedRestaurant mostVisitedRestaurant = null;
+
+            try
+            {
+                if (db == null) throw new Exception("Database context is null!"); // Check if `db` is null
+                if (db.MostOrderedFoods == null) throw new Exception("MostOrderedFoods DbSet is null!");
+                if (db.MostVisitedRestaurants == null) throw new Exception("MostVisitedRestaurants DbSet is null!");
+
+                SqlParameter userParam = new SqlParameter("@UserId", userId ?? (object)DBNull.Value);
+                string sp = "EXEC GetMostOrderedFoodAndRestaurant @UserId";
+
+                var foods = db.MostOrderedFoods.FromSqlRaw(sp, userParam).ToList();
+                var restaurants = db.MostVisitedRestaurants.FromSqlRaw(sp, userParam).ToList();
+
+                mostOrderedFood = foods.FirstOrDefault();
+                mostVisitedRestaurant = restaurants.FirstOrDefault();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error fetching most ordered food and restaurant data: " + ex.Message, ex);
+            }
+
+            return (mostOrderedFood, mostVisitedRestaurant);
+        }
+
+
+        #endregion
+
+        #region Carts
         public async Task<bool> AddandRemoveCart(CartModel cartModel)
         {
             try
@@ -452,8 +845,6 @@ namespace Test.DAL.Repos
             }
         }
 
-
-
         public async Task<List<CartEntity>> OrderedFoodItems(int userId)
         {
             GenricResponse rsp = new GenricResponse();
@@ -498,7 +889,7 @@ namespace Test.DAL.Repos
                         FoodImage = foodImage,
                         Price = price,
                         TotalPrice = (c.TotalCount) * price,
-                        PaymentStatus = "Paid",
+                        PaymentStatus = "Paid Through Card",
                     });
                 }
 
@@ -517,7 +908,7 @@ namespace Test.DAL.Repos
             {
                 // Fetch active items in the cart for the user
                 var cartItems = await db.Cart
-                    .Where(c => c.UserId == userId && c.IsActive && !c.IsDeleted && c.PaymentStatus != "Paid")
+                    .Where(c => c.UserId == userId && c.IsActive && !c.IsDeleted && c.PaymentStatus != "Paid Through Card")
                     .ToListAsync();
 
                 
@@ -530,9 +921,10 @@ namespace Test.DAL.Repos
                 foreach (var item in cartItems)
                 {
                     var price = await db.FoodItems
-                        .Where(f => f.FoodItemId == f.FoodItemId)
-                        .Select(f => (decimal?)f.Price)
-                        .FirstOrDefaultAsync();
+                            .Where(f => f.FoodItemId == item.FoodItemID)
+                            .Select(f => (decimal?)f.Price)
+                            .FirstOrDefaultAsync();
+
 
                     var foodImage = await db.FoodItems
                             .Where(f => f.FoodItemId == item.FoodItemID)
@@ -549,7 +941,7 @@ namespace Test.DAL.Repos
                         MenuId = item.MenuId,
                         RestaurantId = item.RestaurantId,
                         RestaurantName = restaurant,
-                        PaymentStatus = "Paid", // Update payment status to paid
+                        PaymentStatus = "Paid Through Card", // Update payment status to paid
                         FoodItemId = item.FoodItemID,
                         FoodItem = item.FoodItem,
                         FoodImage = foodImage,
@@ -558,7 +950,8 @@ namespace Test.DAL.Repos
                         Price = price??0,
                         TotalPrice = (item.TotalCount ?? 1) * price??0,
                         IsActive = true,
-                        IsDeleted = false
+                        IsDeleted = false,
+                        CreatedOn = DateTime.Now,
                     };
 
                     // Insert the order into the Orders table
@@ -566,7 +959,8 @@ namespace Test.DAL.Repos
 
                     // Mark cart item as deleted after moving to orders
                     item.IsDeleted = true;
-                    item.PaymentStatus = "Paid"; // Update the payment status in the cart
+                    item.PaymentStatus = "Paid Through Card"; // Update the payment status in the cart
+                    item.CreatedOn = DateTime.Now;
 
                     db.Cart.Update(item);
                 }
@@ -687,7 +1081,7 @@ namespace Test.DAL.Repos
             return totalItems;
         }
 
-
+        #endregion
     }
 
 

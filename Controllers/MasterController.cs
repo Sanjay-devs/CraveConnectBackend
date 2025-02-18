@@ -2,9 +2,11 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Test.BAL.Interfaces;
 using Test.BAL.Intrfaces;
+using Test.BAL.Services;
 using Test.Entity;
 using Test.Model;
 using Test.Utilities;
@@ -38,40 +40,6 @@ namespace Test.Controllers
                 Restaurants = restaurants,
                 Menu = menu
             });
-        }
-
-        [HttpGet("GetAllRestaurants")]
-        public async Task<ActionResult<List<RestaurantEntity>>> GetAllRestaurants()
-        {
-            var res = await service.GetAllRestaurants();
-            return Ok(res);
-        }
-
-        [HttpPost("AddOrUpdateRestaurant")]
-        public async Task<ActionResult<GenricResponse>> AddOrUpdateRestaurant(RestaurantEntity model)
-        {
-       
-            if (model == null)
-            {
-                return BadRequest(new GenricResponse
-                {
-                    StatusCode = 400,
-                    StatusMessage = "Invalid request data.",
-                });
-            }
-
-            else
-            {
-                if (model != null)
-                {
-                    var response = await service.AddOrUpdateRestaurant(model);
-                    return StatusCode(response.StatusCode, response);
-                }
-                return Ok(model);
-            }
-            
-           
-           
         }
 
         [HttpPost("UploadFile")]
@@ -183,6 +151,166 @@ namespace Test.Controllers
             return Ok(response);
         }
 
+        #region Restaurants
+        [HttpGet("RestaurantsDD")]
+        public async Task<IActionResult> RestaurantsDD(string q = "")
+        {
+            var res = await service.RestaurantsDD(q);
+            return Ok(res);
+        }
+
+        [HttpGet("GetAllRestaurantsPagenation")]
+        public IActionResult GetAllRestaurantsPagenation(string? q = "", int pageNumber = 1, int pageSize = 5)
+        {
+            var res = service.GetAllRestaurantsPagenation(q, pageNumber, pageSize);
+            return Ok(res);
+        }
+
+        [HttpGet("GetAllRestaurants")]
+        public async Task<ActionResult<List<RestaurantEntity>>> GetAllRestaurants()
+        {
+            var res = await service.GetAllRestaurants();
+            return Ok(res);
+        }
+
+        //[HttpPost("AddOrUpdateRestaurant")]
+        //public async Task<IActionResult> AddOrUpdateRestaurant([FromForm] IFormFile file, [FromForm] RestaurantEntity restaurant)
+        //{
+        //    GenricResponse response = new GenricResponse();
+        //    try
+        //    {
+        //        // Handle file upload
+        //        if (file != null && file.Length > 0)
+        //        {
+        //            // Generate filename
+        //            string filename = DateTime.UtcNow.ToString("yyyyMMddHHmmss") + "_IMG_" + RandomGenerator.RandomString(4, false) + Path.GetExtension(file.FileName);
+
+        //            // Define the upload folder path
+        //            var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "UploadedFiles");
+
+        //            // Create directory if it doesn't exist
+        //            if (!Directory.Exists(uploadsFolder))
+        //            {
+        //                Directory.CreateDirectory(uploadsFolder);
+        //            }
+
+        //            var filePath = Path.Combine(uploadsFolder, filename);
+
+        //            // Save the file to the disk
+        //            using (var stream = new FileStream(filePath, FileMode.Create))
+        //            {
+        //                await file.CopyToAsync(stream);
+        //            }
+
+        //            // Update the restaurant object with the file name (this will be saved in DB)
+        //            restaurant.Rest_Image = filename;
+        //        }
+        //        else
+        //        {
+        //            // In case no file is uploaded, retain the existing image if any
+        //            if (string.IsNullOrEmpty(restaurant.Rest_Image))
+        //            {
+        //                restaurant.Rest_Image = "dummy.png"; // Default image if no file is uploaded
+        //            }
+        //        }
+
+        //        // Save or update restaurant details in the database
+        //        await service.AddOrUpdateRestaurant(restaurant);
+
+        //        response.StatusCode = 1;
+        //        response.StatusMessage = "Restaurant added/updated successfully.";
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        response.StatusCode = 0;
+        //        response.StatusMessage = $"Error: {ex.Message}";
+        //    }
+
+        //    return Ok(new { result = response });
+        //}
+
+        [HttpPost("AddOrUpdateRestaurant")]
+        public async Task<ActionResult<GenricResponse>> AddOrUpdateRestaurant(RestaurantEntity model)
+        {
+
+            if (model == null)
+            {
+                return BadRequest(new GenricResponse
+                {
+                    StatusCode = 400,
+                    StatusMessage = "Invalid request data.",
+                });
+            }
+
+            else
+            {
+                if (model != null)
+                {
+                    var response = await service.AddOrUpdateRestaurant(model);
+                    return StatusCode(response.StatusCode, response);
+                }
+                return Ok(model);
+            }
+
+
+
+        }
+
+        [HttpGet("GetFoodItemsByRestaurantId")]
+        public IActionResult GetFoodItemsByRestaurantId(int restaurantId)
+        {
+            try
+            {
+                if (restaurantId == 0)
+                {
+                    return BadRequest(new { StatusMessage = "Invalid RestaurantId", StatusCode = 400 });
+                }
+
+                else
+                {
+                    var response = service.GetFoodItemsByRestaurantId(restaurantId);
+                    return Ok(new { items_1 = response });
+                    //return Ok(new { StatusCode = 200, StatusMessage = "Registration successful" });
+                }
+
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+        }
+
+        [HttpDelete("DeleteRestaurant")]
+        public IActionResult DeleteRestaurant(int id)
+        {
+            var response = service.DeleteRestaurant(id); // Now returning GenricResponse
+
+            if (response.StatusCode == 200)
+            {
+                return Ok(response);
+            }
+            else if (response.StatusCode == 404)
+            {
+                return NotFound(response);
+            }
+            else
+            {
+                return StatusCode(500, response);
+            }
+        }
+
+
+
+        #endregion
+
+        #region Menu
+        [HttpGet("MenuItemsDD")]
+        public async Task<IActionResult> MenuItemsDD(string? q = "")
+        {
+            var result = await service.MenuItemsDD(q);
+            return Ok(result);
+        }
+
         [HttpPost("AddOrUpdateMenu")]
         public async Task<ActionResult<GenricResponse>> AddOrUpdateMenu(MenuItemEntity model)
         {
@@ -225,11 +353,61 @@ namespace Test.Controllers
             }
         }
 
+        [HttpGet("GetAllMenuItemsPagenation")]
+        public IActionResult GetAllMenuItemsPagenation(string? q = "", int pageNumber = 1, int pageSize = 10)
+        {
+            var res = service.GetAllMenuItemsPagenation(q, pageNumber, pageSize);
+            return Ok(res);
+        }
+
 
         [HttpGet("GetMenuById")]
         public IActionResult GetMenuById(int id)
         {
             var res = service.GetMenuById(id);
+            return Ok(res);
+        }
+
+        [HttpDelete("DeleteMenuItem")]
+        public IActionResult DeleteMenuItem(int id)
+        {
+            var response = service.DeleteMenuItem(id); // Now returning GenricResponse
+
+            if (response.StatusCode == 200)
+            {
+                return Ok(response);
+            }
+            else if (response.StatusCode == 404)
+            {
+                return NotFound(response);
+            }
+            else
+            {
+                return StatusCode(500, response);
+            }
+        }
+
+
+
+        [HttpGet("GetFoodItemsByMenuId")]
+        public IActionResult GetFoodItemsByMenuId([FromQuery] int menuId)
+        {
+            //if (menuId == 0)
+            //{
+            //    return BadRequest(new { StatusMessage = "Invalid menuId", StatusCode = 400 });
+            //}
+
+            var response = service.GetFoodItemsByMenuId(menuId);
+            return Ok(response);
+        }
+
+        #endregion
+
+        #region FoodItems
+        [HttpGet("GetAllFoodItemsPagenation")]
+        public IActionResult GetAllFoodItemsPagenation(string? q = "", int pageNumber = 1, int pageSize = 10)
+        {
+            var res = service.GetAllFoodItemsPagenation(q, pageNumber, pageSize);
             return Ok(res);
         }
 
@@ -260,6 +438,7 @@ namespace Test.Controllers
 
         }
 
+
         [HttpGet("GetAllFoodItems")]
         public IActionResult GetAllFoodItems()
         {
@@ -274,42 +453,45 @@ namespace Test.Controllers
             }
         }
 
-        [HttpGet("GetFoodItemsByMenuId")]
-        public IActionResult GetFoodItemsByMenuId([FromQuery] int menuId)
+        [HttpDelete("DeleteFoodItem")]
+        public IActionResult DeleteFoodItem(int id)
         {
-            //if (menuId == 0)
-            //{
-            //    return BadRequest(new { StatusMessage = "Invalid menuId", StatusCode = 400 });
-            //}
+            GenricResponse resp = new GenricResponse();
+            var menu = service.DeleteFoodItem(id);
 
-            var response = service.GetFoodItemsByMenuId(menuId);
-            return Ok(response);
+            if (menu != null)
+            {
+                resp.StatusCode = 200;
+                resp.StatusMessage = "Food Item deleted successfully";
+                resp.CurrentId = id;
+                return Ok(resp);
+            }
+
+            return NotFound(new
+            {
+                StatusCode = 404,
+                StatusMessage = "Food Item not found"
+            });
         }
 
-        [HttpGet("GetFoodItemsByRestaurantId")]
-        public IActionResult GetFoodItemsByRestaurantId(int restaurantId)
+        [HttpGet("MostOrdered")]
+        public IActionResult GetMostOrderedFoodAndRestaurant([FromQuery] int? userId = null)
         {
-            try
-            {
-                if (restaurantId == 0)
-                {
-                    return BadRequest(new { StatusMessage = "Invalid RestaurantId", StatusCode = 400 });
-                }
+            var result = service.GetMostOrderedFoodAndRestaurant(userId);
 
-                else
-                {
-                    var response = service.GetFoodItemsByRestaurantId(restaurantId);
-                    return Ok(new {items_1 = response});
-                    //return Ok(new { StatusCode = 200, StatusMessage = "Registration successful" });
-                }
+            if (result.Item1 == null || result.Item2 == null)
+                return NotFound(new { message = "No order data found" });
 
-            }
-            catch (Exception ex)
+            return Ok(new
             {
-                throw ex;
-            }
+                MostOrderedFood = result.Item1,
+                MostVisitedRestaurant = result.Item2
+            });
         }
 
+        #endregion
+
+        #region Cart
         [HttpPost]
         [Route("AddandRemoveCart")]
         public async Task<IActionResult> AddandRemoveCart(CartModel cartModel)
@@ -409,6 +591,8 @@ namespace Test.Controllers
             var res = await service.GetTotalCartItems(userId);
             return Ok(res);
         }
+
+        #endregion
 
     }
 }

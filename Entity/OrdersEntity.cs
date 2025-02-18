@@ -20,5 +20,6 @@ namespace Test.Entity
         public decimal TotalPrice { get; set; }
         public bool IsDeleted { get; set; }
         public bool IsActive { get; set; }
+        public DateTime CreatedOn { get; set; }
     }
 }

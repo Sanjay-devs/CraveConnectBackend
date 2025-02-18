@@ -13,5 +13,6 @@
         public int TotalQuantity { get; set; }
         public decimal Price { get; set; }
         public decimal TotalPrice { get; set; }
+        public DateTime CreatedOn { get; set; }
     }
 }

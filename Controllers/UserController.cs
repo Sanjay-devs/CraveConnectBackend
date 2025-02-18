@@ -15,6 +15,9 @@ using Test.Entity;
 using Test.Utilities;
 using Azure;
 using Test.BAL.Intrfaces;
+using System.Net;
+using Test.Model;
+using CraveConnect.Entity;
 
 namespace Test.Controllers
 {
@@ -29,11 +32,11 @@ namespace Test.Controllers
         private readonly MyDbContext db;
         //private readonly TokenValidationMiddleware valid;
 
-        public UserController(IUserMasterService _service, 
-            MyDbContext _db, 
+        public UserController(IUserMasterService _service,
+            MyDbContext _db,
             IConfiguration configuration,
             IJwtToken _jwtToken)
-            //TokenValidationMiddleware _valid)
+        //TokenValidationMiddleware _valid)
         {
             service = _service;
             db = _db;
@@ -42,7 +45,47 @@ namespace Test.Controllers
             //this.valid = _valid;
         }
 
-        [HttpGet("GetById")]
+        [HttpGet("UserTypeDD")]
+        public async Task<IActionResult> UserTypeDD(string? q = "")
+        {
+            var res = await service.UserTypeDD(q);
+            return Ok(res);
+        }
+        [HttpPost("AddOrUpdateUserType")]
+        public async Task<ActionResult<GenricResponse>> AddOrUpdateUserType(UserTypeMasterEntity model)
+        {
+
+            if (model == null)
+            {
+                return BadRequest(new GenricResponse
+                {
+                    StatusCode = 400,
+                    StatusMessage = "Invalid request data.",
+                });
+            }
+
+            else
+            {
+                if (model != null)
+                {
+                    var response = await service.AddOrUpdateUserType(model);
+                    return StatusCode(response.StatusCode, response);
+                }
+                return Ok(model);
+            }
+
+
+
+        }
+
+        [HttpGet("GetAllUsersPagenation")]
+        public IActionResult GetAllUsersPagenation(string? q = "", int pageNumber = 1, int pageSize = 10)
+        {
+            var res = service.GetAllUsersPagenation(q, pageNumber, pageSize);
+            return Ok(res);
+        }
+
+        [HttpGet("GetUserById")]
         public IActionResult GetUserById(int Id)
         {
             var res = service.GetBbyId(Id);
@@ -53,7 +96,7 @@ namespace Test.Controllers
             return Ok(res);
         }
 
-        [Authorize]
+        //[Authorize]
         [HttpGet("GetUsersList")]
         public IActionResult GetUsersList()
         {
@@ -61,38 +104,93 @@ namespace Test.Controllers
             return Ok(res);
         }
 
+        [HttpPost("UpdateUser")]
+        public IActionResult UpdateUser(UserModel user)
+        {
+            try
+            {
+                var existingUser = db.Users.FirstOrDefault(u => u.UserId == user.UserId);
+                if (existingUser == null)
+                {
+                    return NotFound(new { StatusCode = 404, StatusMessage = "User not found" });
+                }
+
+                // Check for conflicts
+                var existUser = db.Users
+                    .Where(u => (u.EmailId == user.EmailId ||
+                                 u.MobileNumber == user.MobileNumber)
+                                && u.UserId != user.UserId && !u.IsDeleted)
+                    .FirstOrDefault();
+
+                if (existUser != null)
+                {
+                    return Conflict(new { StatusCode = 409, StatusMessage = "User with this Email, or Mobile Number already exists" });
+                }
+
+                // Update User Details
+                existingUser.UserName = user.UserName;
+                existingUser.EmailId = user.EmailId;
+                existingUser.MobileNumber = user.MobileNumber;
+                existingUser.Address = user.Address;
+                existingUser.Image = user.Image;
+                existingUser.UpdatedOn = DateTime.UtcNow;
+
+                db.Users.Update(existingUser);
+                db.SaveChanges();
+
+                return Ok(new { StatusCode = 200, StatusMessage = "User updated successfully", updatedUser = existingUser });
+
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { StatusCode = 500, StatusMessage = ex.Message });
+            }
+        }
+
+
         [HttpPost("Register")]
         public IActionResult Register(UserEntity user)
         {
             try
             {
-                bool isEmailAvailable = service.IsEmailAvailable(user.EmailId);
-                if (!isEmailAvailable)
+                if (user == null)
+                {
+                    return BadRequest(new { StatusCode = 0, StatusMessage = "User data cannot be null" });
+                }
+                if (string.IsNullOrWhiteSpace(user.EmailId))
+                {
+                    return BadRequest(new { StatusCode = 0, StatusMessage = "Email ID is required" });
+                }
+
+                // Fix IsEmailAvailable logic
+                if (!service.IsEmailAvailable(user.EmailId))
                 {
                     return BadRequest(new { StatusCode = 403, StatusMessage = "User exists with this email" });
                 }
 
-                var result = service.Register(user);
+                
+
                 if (user.Password != user.VerifyPassword)
                 {
                     return BadRequest(new { StatusCode = 0, StatusMessage = "Password Mismatch" });
                 }
+
+                var result = service.Register(user);
                 if (result != null)
                 {
                     return Ok(new { StatusCode = 200, StatusMessage = "Registration successful" });
                 }
-              
                 else
                 {
                     return BadRequest(new { StatusCode = 0, StatusMessage = "Registration failed" });
                 }
-
             }
             catch (Exception ex)
             {
                 return BadRequest(new { StatusCode = 0, StatusMessage = ex.Message });
             }
         }
+
 
         [HttpPost("Login")]
         public async Task<IActionResult> Login([FromQuery] string email, [FromQuery] string password)
@@ -121,8 +219,13 @@ namespace Test.Controllers
                         return Ok(new
                         {
                             value1 = res,
-                            userId = user.UserId // Add userId to response
-                            
+                            userId = user.UserId,
+                            userName = user.UserName,
+                            mobileNumber = user.MobileNumber,
+                            emailid = user.EmailId,
+                            address = user.Address,
+                            userTypeId = user.UserTypeId
+
                         });
                     }
                     else
@@ -136,7 +239,7 @@ namespace Test.Controllers
                 else
                 {
                     res.StatusCode = 401;
-                    res.StatusMessage = "Invalid credentials";
+                    res.StatusMessage = "Password mismatch";
 
                     return Unauthorized(res);
                 }
@@ -170,7 +273,25 @@ namespace Test.Controllers
             }
         }
 
-        
+        [HttpDelete("DeleteUser")]
+        public IActionResult DeleteUser(int id)
+        {
+            var response = service.DeleteUser(id); // Now returning GenricResponse
+
+            if (response.StatusCode == 200)
+            {
+                return Ok(response);
+            }
+            else if (response.StatusCode == 404)
+            {
+                return NotFound(response);
+            }
+            else
+            {
+                return StatusCode(500, response);
+            }
+        }
+
 
 
     }

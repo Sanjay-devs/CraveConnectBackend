@@ -1,7 +1,10 @@
-﻿using Test.BAL.Intrfaces;
+﻿using CraveConnect.Entity;
+using Test.BAL.Intrfaces;
 using Test.Context;
 using Test.DAL.Interface;
 using Test.Entity;
+using Test.Model;
+using static CraveConnect.Utilities.UserActions;
 
 namespace Test.BAL.Services
 {
@@ -15,12 +18,26 @@ namespace Test.BAL.Services
             repo = _repo;
             db = _db;
         }
-
+        public Task<List<DropDownList>> UserTypeDD(string? q = "")
+        {
+            return repo.UserTypeDD(q);
+        }
+        public Task<GenricResponse> AddOrUpdateUserType(UserTypeMasterEntity model)
+        {
+            return repo.AddOrUpdateUserType(model);
+        }
+        public UserspModel GetAllUsersPagenation(string? q = "", int pageNumber = 1, int pageSize = 10)
+        {
+            return repo.GetAllUsersPagenation(q, pageNumber, pageSize);
+        }
         public UserEntity GetBbyId(int id)
         {
             return repo.GetBbyId(id);
         }
-
+        public Task<GenricResponse> AddEditUser(UserEntity model)
+        {
+            return repo.AddEditUser(model);
+        }
         public UserEntity Register(UserEntity user)
         {
             return repo.Register(user);
@@ -41,6 +58,10 @@ namespace Test.BAL.Services
             return repo.IsEmailAvailable(emailId);
         }
 
+        public GenricResponse DeleteUser(int id)
+        {
+            return repo.DeleteUser(id);
+        }
 
     }
 }

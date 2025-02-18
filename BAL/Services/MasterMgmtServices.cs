@@ -2,6 +2,7 @@
 using Test.DAL.Interfaces;
 using Test.Entity;
 using Test.Model;
+using static CraveConnect.Utilities.UserActions;
 
 namespace Test.BAL.Services
 {
@@ -18,6 +19,14 @@ namespace Test.BAL.Services
         {
             return repo.SearchAsync(query);
         }
+        public Task<List<DropDownList>> RestaurantsDD(string? q = "")
+        {
+            return repo.RestaurantsDD(q);
+        }
+        public RestaurantspModel GetAllRestaurantsPagenation(string? q = "", int pageNumber = 1, int pageSize = 5)
+        {
+            return repo.GetAllRestaurantsPagenation(q, pageNumber, pageSize);
+        }
         public Task<List<RestaurantEntity>> GetAllRestaurants()
         {
             return repo.GetAllRestaurants();
@@ -28,6 +37,14 @@ namespace Test.BAL.Services
             return repo.AddOrUpdateRestaurant(model);
         }
 
+        public GenricResponse DeleteRestaurant(int id)
+        {
+            return repo.DeleteRestaurant(id);
+        }
+        public Task<List<DropDownList>> MenuItemsDD(string? q = "")
+        {
+            return repo.MenuItemsDD(q);
+        }
         public Task<GenricResponse> AddOrUpdateMenu(MenuItemEntity model)
         {
             return repo.AddOrUpdateMenu(model);
@@ -38,9 +55,17 @@ namespace Test.BAL.Services
             return repo.GetAllMenuItems();
         }
 
+        public MenuItemspModel GetAllMenuItemsPagenation(string? q = "", int pageNumber = 1, int pageSize = 10)
+        {
+            return repo.GetAllMenuItemsPagenation(q, pageNumber, pageSize);
+        }
         public MenuItemEntity GetMenuById(int id)
         {
             return repo.GetMenuById(id);
+        }
+        public GenricResponse DeleteMenuItem(int id)
+        {
+            return repo.DeleteMenuItem(id);
         }
         public Task<GenricResponse> AddOrUpdateFoodItem(FoodItemEntity model)
         {
@@ -49,6 +74,18 @@ namespace Test.BAL.Services
         public List<FoodItemModel> GetAllFoodItems()
         {
             return repo.GetAllFoodItems();
+        }
+        public FoodItemspModel GetAllFoodItemsPagenation(string? q = "", int pageNumber = 1, int pageSize = 10)
+        {
+            return repo.GetAllFoodItemsPagenation(q, pageNumber, pageSize);
+        }
+        public GenricResponse DeleteFoodItem(int id)
+        {
+            return repo.DeleteFoodItem(id);
+        }
+        public (MostOrderedFood, MostVisitedRestaurant) GetMostOrderedFoodAndRestaurant(int? userId = null)
+        {
+            return repo.GetMostOrderedFoodAndRestaurant(userId);
         }
         public Task<bool> AddandRemoveCart(CartModel cartModel)
         {

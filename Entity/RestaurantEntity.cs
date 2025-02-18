@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Test.Model;
 
 namespace Test.Entity
 {
@@ -12,5 +13,12 @@ namespace Test.Entity
         public string? Rest_Image { get; set; }
         public bool IsDeleted { get; set; }
         public bool IsActive { get; set; }
+    }
+
+    public class RestaurantspModel : Pagenation
+    {
+        public List<RestaurantEntity> result { get; set; }
+        public int count { get; set; }
+
     }
 }

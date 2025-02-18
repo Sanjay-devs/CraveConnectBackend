@@ -10,4 +10,16 @@
         public bool IsDeleted { get; set; }
         public bool IsActive { get; set; }
     }
+    public class MostVisitedRestaurant : RestaurantModel
+    {
+        public int RestaurantId { get; set; }
+        public string? Name { get; set; }
+        public int VisitCount { get; set; }
+    }
+    //public class RestaurantspModel : Pagenation
+    //{
+    //    public List<RestaurantModel> result { get; set; }
+    //    public int count { get; set; }
+
+    //}
 }
